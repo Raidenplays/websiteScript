@@ -589,6 +589,14 @@
     });
   }
 
+  /* ------------------------------------------------------------ phone back button */
+  // Android calls this when Back is pressed. Returns true if the app handled it.
+  window.__siteBack = function () {
+    if ($('#modal').className !== 'hidden') { closeModal(); return true; }
+    if ($('#appview').className !== 'hidden' && S.view !== 'pages') { go('pages'); return true; }
+    return false;
+  };
+
   /* ------------------------------------------------------------ start */
   site.restore().then(function (r) {
     if (r.loggedIn) start(r.server, r.name); else showLogin(r.server, r.username);

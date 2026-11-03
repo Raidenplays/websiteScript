@@ -55,6 +55,7 @@ Run `./site.sh help` for everything else (status, logs, backup, restore, admin, 
 | `site.sh` | Day-to-day commands: update, backup, restore, export/import pages... |
 | `pages/site-content.json` | The starter pages |
 | `manager-app/` | Source code for the Raiden Site Manager Windows app |
+| `android-app/` | The Android version (built by GitHub Actions) |
 | `.env.example` | Settings (copy to `.env`) |
 
 ## Manual setup (if you don't use install.sh)
@@ -89,6 +90,8 @@ Everything on the site (tabs, sections, text, projects, links, blog posts) is st
 4. **Blog:** write posts and save them as drafts or publish them. Each post gets its own link (`/blog-post/...`).
 5. **History:** every save is kept (last 50), so you can undo by restoring an old version.
 6. **Pics, Poll, Shoutbox, Users:** upload pictures, start polls, delete shouts, and ban, delete, promote or reset passwords for accounts.
+
+**On Android:** install it from https://github.com/Raidenplays/websiteScript/releases/latest/download/RaidenSiteManager.apk (allow installing from your browser when Android asks).
 
 Windows SmartScreen may warn the first time because the app isn't code-signed. Click **More info**, then **Run anyway**.
 
