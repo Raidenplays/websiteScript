@@ -24,7 +24,7 @@ case "${1:-help}" in
     ;;
   update)
     say "Getting the latest code..."
-    git pull --ff-only
+    git -c safe.directory="$DIR" pull --ff-only
     "$0" backup --quiet || true
     docker compose up -d --build
     say "Updated. Your accounts and pages were kept."
