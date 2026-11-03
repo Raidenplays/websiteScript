@@ -1,0 +1,8 @@
+.env
+backups/
+data/
+__pycache__/
+*.pyc
+manager-app/node_modules/
+manager-app/dist/
+pages-*.json

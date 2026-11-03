@@ -1,0 +1,558 @@
+{
+  "site": {
+    "logo": "RAIDEN BRUNDIN",
+    "tagline": "IT & systems administration • Linux • homelab • networking",
+    "banner_label": "CURRENTLY:",
+    "banner_text": "Systems Administration (IT) student • Nova Scotia, Canada",
+    "banner_url": "",
+    "page_title": "Raiden Brundin :: IT & Systems Administration",
+    "description": "Raiden Brundin - IT and systems administration student in Nova Scotia, Canada. Linux, homelab and networking.",
+    "footer": "© 2026 Raiden Brundin. Hosted on my own homelab server.\nBest viewed in Internet Explorer 7 or Firefox 3 at 1024x768"
+  },
+  "tabs": [
+    {
+      "slug": "home",
+      "title": "Home",
+      "hidden": false,
+      "heading": "",
+      "subheading": "",
+      "page_title": "",
+      "main": [
+        {
+          "type": "text",
+          "title": "★ HI, I'M RAIDEN BRUNDIN",
+          "color": "green",
+          "link_label": "",
+          "link_url": "",
+          "text": "I'm a **Systems Administration (IT) student** in Nova Scotia, Canada. I like figuring out how systems fit together, then running them myself.\n\nOutside of class I run my own **Linux homelab**, and this website is hosted on it. I've built and troubleshot my own PCs and used a lot of different Linux distros along the way.\n\nI also make Minecraft videos on YouTube, which is what the [Videos](/videos) tab is for.",
+          "badge": "RB",
+          "buttons": [
+            {
+              "label": "✉ Get in touch",
+              "sub": "",
+              "url": "@email",
+              "color": "gray"
+            },
+            {
+              "label": "LinkedIn",
+              "sub": "",
+              "url": "@linkedin",
+              "color": "gray"
+            }
+          ]
+        },
+        {
+          "type": "items",
+          "title": "EDUCATION",
+          "color": "orange",
+          "link_label": "",
+          "link_url": "",
+          "items": [
+            {
+              "icon": "IT",
+              "icon_color": "blue",
+              "title": "Systems Administration (IT) Program",
+              "subtitle": "",
+              "tags": [
+                "2-year program",
+                "In progress"
+              ],
+              "text": "Current coursework:\n\n- Cisco Networking Essentials (ITN)\n- Python programming\n- HTML / web fundamentals",
+              "url": ""
+            }
+          ]
+        },
+        {
+          "type": "items",
+          "title": "PROJECTS",
+          "color": "green",
+          "link_label": "",
+          "link_url": "",
+          "items": [
+            {
+              "icon": "⚙",
+              "icon_color": "green",
+              "title": "Home Server (Homelab)",
+              "subtitle": "",
+              "tags": [
+                "Debian",
+                "Docker",
+                "Runtipi",
+                "Cloudflare Tunnel",
+                "Tailscale"
+              ],
+              "text": "A Lenovo ThinkCentre M720q I set up as an always-on Linux server.\n\n- Debian with Runtipi to deploy self-hosted apps in Docker\n- Hosts this website through a Cloudflare Tunnel\n- Runs a Navidrome music server at music.raidenbrundin.com\n- Runs a public Minecraft server with Crafty Controller\n- Remote admin access over Tailscale; router port forwarding configured on a Bell Giga Hub",
+              "url": ""
+            },
+            {
+              "icon": "m",
+              "icon_color": "lime",
+              "title": "Matcha Music",
+              "subtitle": "",
+              "tags": [
+                "Android",
+                "Kotlin",
+                "Jetpack Compose",
+                "Subsonic API"
+              ],
+              "text": "An Android music player for self-hosted music libraries. It streams from Navidrome and other Subsonic-compatible servers, supports offline downloads, and is being prepared for release on Google Play.",
+              "url": ""
+            },
+            {
+              "icon": "PC",
+              "icon_color": "gray",
+              "title": "PC Building & Linux",
+              "subtitle": "",
+              "tags": [
+                "Hardware",
+                "Linux",
+                "Troubleshooting"
+              ],
+              "text": "Built my own desktop (Intel i9-10900K, RTX 3080) and have run Arch-based distros, elementary OS and now Kubuntu on it.\n\n- Resolved Intel RAID/VMD vs AHCI storage conflicts and GRUB boot problems\n- Set up dual-booting Linux and Windows on separate NVMe drives\n- Configured NVIDIA drivers and a video editing setup on Linux",
+              "url": ""
+            }
+          ]
+        },
+        {
+          "type": "links",
+          "title": "THE FUN STUFF",
+          "color": "black",
+          "link_label": "",
+          "link_url": "",
+          "style": "boxes",
+          "items": [
+            {
+              "label": "▶ Videos",
+              "sub": "creepy Minecraft on YouTube",
+              "url": "/videos",
+              "color": "gray"
+            },
+            {
+              "label": "📷 Pics",
+              "sub": "screenshots & stuff",
+              "url": "/pics",
+              "color": "gray"
+            },
+            {
+              "label": "💬 Community",
+              "sub": "shoutbox, polls, Discord",
+              "url": "/community",
+              "color": "gray"
+            }
+          ]
+        }
+      ],
+      "side": [
+        {
+          "type": "items",
+          "title": "SKILLS",
+          "color": "green",
+          "link_label": "",
+          "link_url": "",
+          "items": [
+            {
+              "icon": "",
+              "icon_color": "green",
+              "title": "Linux",
+              "subtitle": "",
+              "tags": [],
+              "text": "Debian, Ubuntu / Kubuntu, Arch-based distros; installs, dual-booting, bootloader and driver troubleshooting",
+              "url": ""
+            },
+            {
+              "icon": "",
+              "icon_color": "green",
+              "title": "Self-hosting",
+              "subtitle": "",
+              "tags": [],
+              "text": "Docker, Runtipi, Cloudflare Tunnel, Tailscale, Navidrome",
+              "url": ""
+            },
+            {
+              "icon": "",
+              "icon_color": "green",
+              "title": "Networking",
+              "subtitle": "",
+              "tags": [],
+              "text": "Cisco Networking Essentials (ITN) coursework, Packet Tracer, router config & port forwarding, DNS / subdomains",
+              "url": ""
+            },
+            {
+              "icon": "",
+              "icon_color": "green",
+              "title": "Hardware",
+              "subtitle": "",
+              "tags": [],
+              "text": "PC building, BIOS/storage config (AHCI vs RAID), diagnosing failed parts",
+              "url": ""
+            },
+            {
+              "icon": "",
+              "icon_color": "green",
+              "title": "Coursework",
+              "subtitle": "",
+              "tags": [],
+              "text": "Python, HTML",
+              "url": ""
+            }
+          ]
+        },
+        {
+          "type": "links",
+          "title": "LINKS & CONTACT",
+          "color": "orange",
+          "link_label": "",
+          "link_url": "",
+          "style": "list",
+          "items": [
+            {
+              "label": "✉ Email me",
+              "sub": "",
+              "url": "@email",
+              "color": "gray"
+            },
+            {
+              "label": "LinkedIn",
+              "sub": "",
+              "url": "@linkedin",
+              "color": "gray"
+            },
+            {
+              "label": "GitHub",
+              "sub": "",
+              "url": "@github",
+              "color": "gray"
+            },
+            {
+              "label": "YouTube",
+              "sub": "",
+              "url": "@youtube",
+              "color": "gray"
+            }
+          ]
+        },
+        {
+          "type": "counter",
+          "title": "You are visitor number:",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        }
+      ]
+    },
+    {
+      "slug": "blog",
+      "title": "Blog",
+      "hidden": false,
+      "heading": "BLOG",
+      "subheading": "Notes on my homelab, Linux, school and whatever else I'm working on.",
+      "page_title": "",
+      "main": [
+        {
+          "type": "blog",
+          "title": "LATEST POSTS",
+          "color": "green",
+          "link_label": "",
+          "link_url": "",
+          "count": 20
+        }
+      ],
+      "side": [
+        {
+          "type": "links",
+          "title": "LINKS & CONTACT",
+          "color": "orange",
+          "link_label": "",
+          "link_url": "",
+          "style": "list",
+          "items": [
+            {
+              "label": "✉ Email me",
+              "sub": "",
+              "url": "@email",
+              "color": "gray"
+            },
+            {
+              "label": "LinkedIn",
+              "sub": "",
+              "url": "@linkedin",
+              "color": "gray"
+            },
+            {
+              "label": "YouTube",
+              "sub": "",
+              "url": "@youtube",
+              "color": "gray"
+            }
+          ]
+        },
+        {
+          "type": "counter",
+          "title": "You are visitor number:",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        }
+      ]
+    },
+    {
+      "slug": "videos",
+      "title": "Videos",
+      "hidden": false,
+      "heading": "VIDEOS!!!",
+      "subheading": "I make creepy Minecraft videos as **ItsRaiden**. Every upload shows up here automatically. Turn the lights off. Seriously.",
+      "page_title": "Videos :: ItsRaiden",
+      "main": [
+        {
+          "type": "marquee",
+          "title": "",
+          "color": "green",
+          "link_label": "",
+          "link_url": "",
+          "text": "*** WELCOME TO ITSRAIDEN ON YOUTUBE!!! *** I'M BACK!!! *** Watch MISPLACED with SlinkGrenade *** Sign up and leave a shout!!! ***"
+        },
+        {
+          "type": "player",
+          "title": "★ LATEST UPLOAD",
+          "color": "green",
+          "link_label": "subscribe",
+          "link_url": "https://www.youtube.com/@itsraidenfr?sub_confirmation=1"
+        },
+        {
+          "type": "videos",
+          "title": "ALL MY UPLOADS",
+          "color": "orange",
+          "link_label": "see them on YouTube",
+          "link_url": "https://www.youtube.com/@itsraidenfr/videos",
+          "count": 15
+        },
+        {
+          "type": "items",
+          "title": "CHANNEL NEWS",
+          "color": "black",
+          "link_label": "",
+          "link_url": "",
+          "items": [
+            {
+              "icon": "",
+              "icon_color": "green",
+              "title": "I'M BACK!!!",
+              "subtitle": "Posted by Raiden",
+              "tags": [],
+              "text": "After like 2 years away I'm finally making videos again. More creepy Minecraft, more horror maps, more SlinkGrenade screaming. Go subscribe!!",
+              "url": ""
+            },
+            {
+              "icon": "",
+              "icon_color": "green",
+              "title": "Misplaced is up!!",
+              "subtitle": "Posted by Raiden",
+              "tags": [],
+              "text": "Me and SlinkGrenade played a backrooms horror map and it was pure panic. Go watch it with the lights off.",
+              "url": ""
+            }
+          ]
+        }
+      ],
+      "side": [
+        {
+          "type": "poll",
+          "title": "POLL!!!",
+          "color": "orange",
+          "link_label": "",
+          "link_url": ""
+        },
+        {
+          "type": "shoutbox",
+          "title": "SHOUTBOX",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        },
+        {
+          "type": "links",
+          "title": "BUDDIES",
+          "color": "black",
+          "link_label": "",
+          "link_url": "",
+          "style": "badges",
+          "items": [
+            {
+              "label": "YouTube",
+              "sub": "",
+              "url": "@youtube",
+              "color": "red"
+            },
+            {
+              "label": "SlinkGrenade",
+              "sub": "",
+              "url": "@slinkgrenade",
+              "color": "orange"
+            },
+            {
+              "label": "Discord",
+              "sub": "",
+              "url": "@discord",
+              "color": "blue"
+            },
+            {
+              "label": "Buy Me a Coffee",
+              "sub": "",
+              "url": "@coffee",
+              "color": "yellow"
+            }
+          ]
+        },
+        {
+          "type": "counter",
+          "title": "You are visitor number:",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        }
+      ]
+    },
+    {
+      "slug": "pics",
+      "title": "Pics",
+      "hidden": false,
+      "heading": "PICS!!!",
+      "subheading": "Screenshots, setups and behind the scenes. Click a pic to make it big!",
+      "page_title": "",
+      "main": [
+        {
+          "type": "pics",
+          "title": "PHOTO ALBUM",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        }
+      ],
+      "side": [
+        {
+          "type": "poll",
+          "title": "POLL!!!",
+          "color": "orange",
+          "link_label": "",
+          "link_url": ""
+        },
+        {
+          "type": "shoutbox",
+          "title": "SHOUTBOX",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        },
+        {
+          "type": "counter",
+          "title": "You are visitor number:",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        }
+      ]
+    },
+    {
+      "slug": "community",
+      "title": "Community",
+      "hidden": false,
+      "heading": "COMMUNITY!!!",
+      "subheading": "Sign up to post in the shoutbox and vote in polls. Come say hi!!",
+      "page_title": "",
+      "main": [
+        {
+          "type": "discord",
+          "title": "★ JOIN THE DISCORD",
+          "color": "green",
+          "link_label": "",
+          "link_url": "",
+          "text": "Get pinged when new videos drop, hang out with other viewers, and send me creepy seeds and maps to play."
+        },
+        {
+          "type": "text",
+          "title": "WHO'S SLINKGRENADE?",
+          "color": "orange",
+          "link_label": "",
+          "link_url": "",
+          "text": "My partner in crime for the horror map videos.",
+          "badge": "",
+          "buttons": [
+            {
+              "label": "His channel",
+              "sub": "",
+              "url": "@slinkgrenade",
+              "color": "gray"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "title": "THE RULES",
+          "color": "black",
+          "link_label": "",
+          "link_url": "",
+          "text": "- Be nice. Seriously.\n- No spam or self-promo\n- No spoilers for videos that aren't out yet\n- Keep it PG-13\n- Herobrine is not allowed.",
+          "badge": "",
+          "buttons": []
+        }
+      ],
+      "side": [
+        {
+          "type": "poll",
+          "title": "POLL!!!",
+          "color": "orange",
+          "link_label": "",
+          "link_url": ""
+        },
+        {
+          "type": "shoutbox",
+          "title": "SHOUTBOX",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        },
+        {
+          "type": "links",
+          "title": "BUDDIES",
+          "color": "black",
+          "link_label": "",
+          "link_url": "",
+          "style": "badges",
+          "items": [
+            {
+              "label": "YouTube",
+              "sub": "",
+              "url": "@youtube",
+              "color": "red"
+            },
+            {
+              "label": "SlinkGrenade",
+              "sub": "",
+              "url": "@slinkgrenade",
+              "color": "orange"
+            },
+            {
+              "label": "Discord",
+              "sub": "",
+              "url": "@discord",
+              "color": "blue"
+            },
+            {
+              "label": "Buy Me a Coffee",
+              "sub": "",
+              "url": "@coffee",
+              "color": "yellow"
+            }
+          ]
+        },
+        {
+          "type": "counter",
+          "title": "You are visitor number:",
+          "color": "green",
+          "link_label": "",
+          "link_url": ""
+        }
+      ]
+    }
+  ]
+}

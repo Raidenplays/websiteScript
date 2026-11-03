@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http://localhost:* http://127.0.0.1:*; connect-src 'self'">
+<title>Raiden Site Manager</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="loginview" class="hidden">
+    <form id="loginform" class="loginbox">
+      <div class="brand">RAIDEN<span>!</span></div>
+      <h1>Site Manager</h1>
+      <label>Website<input name="server" placeholder="raidenbrundin.com" required></label>
+      <label>Admin username<input name="username" autocomplete="username" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <label class="check"><input type="checkbox" name="remember" checked> Keep me logged in on this PC</label>
+      <button class="primary" type="submit">Log in</button>
+      <div class="msg" id="loginmsg"></div>
+    </form>
+  </div>
+
+  <div id="appview" class="hidden">
+    <header>
+      <div class="brand small">RAIDEN<span>!</span> <em>Site Manager</em></div>
+      <div class="spacer"></div>
+      <span id="who"></span>
+      <button id="viewsite">View site &#8599;</button>
+      <button id="logoutbtn">Log out</button>
+    </header>
+    <div id="savebar" class="hidden">
+      <span>You have unsaved changes to your pages.</span>
+      <button id="discardbtn">Discard</button>
+      <button id="savebtn" class="primary">Save &amp; publish</button>
+    </div>
+    <div id="body">
+      <nav id="sidenav">
+        <a data-view="pages" class="on">&#128196; Pages &amp; Sections</a>
+        <a data-view="settings">&#9881; Site Settings</a>
+        <a data-view="blog">&#9998; Blog</a>
+        <a data-view="pics">&#128247; Pics</a>
+        <a data-view="poll">&#128202; Poll</a>
+        <a data-view="shouts">&#128172; Shoutbox</a>
+        <a data-view="users">&#128101; Users</a>
+        <a data-view="history">&#8634; History</a>
+      </nav>
+      <main id="view"></main>
+    </div>
+  </div>
+
+  <div id="modal" class="hidden"><div class="dialog"><div class="dhead"><b id="mtitle"></b><button id="mclose" title="Close">&times;</button></div><div id="mbody"></div><div class="dfoot" id="mfoot"></div></div></div>
+  <div id="toast" class="hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

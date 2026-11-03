@@ -1,0 +1,22 @@
+name: raiden-website
+
+services:
+  website:
+    build: .
+    container_name: raiden-website
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - website-data:/data          # accounts, shouts, polls, pics
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"       # only reachable from this machine (Cloudflare Tunnel connects here)
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  website-data:

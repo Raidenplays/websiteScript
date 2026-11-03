@@ -1,0 +1,18 @@
+{
+  "name": "raiden-site-manager",
+  "productName": "Raiden Site Manager",
+  "version": "1.0.0",
+  "description": "Desktop admin app for raidenbrundin.com",
+  "main": "main.js",
+  "author": "Raiden Brundin",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-packager . \"Raiden Site Manager\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --ignore=\"^/dist\" --ignore=\"^/test\""
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "@electron/packager": "20.3.0"
+  }
+}
