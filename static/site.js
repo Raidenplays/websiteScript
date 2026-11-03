@@ -224,13 +224,25 @@
   function signupPage() {
     var f = $('#signupform'); if (!f) return;
     if (ME) { f.style.display = 'none'; $('#signedin').style.display = ''; return; }
+    // Optional Cloudflare Turnstile robot check (only if the site owner turned it on)
+    var tsId = null;
+    if (/^[\w-]+$/.test(CFG.turnstile || '') && $('#turnstile')) {
+      window.__tsReady = function () { tsId = window.turnstile.render('#turnstile', { sitekey: CFG.turnstile }); };
+      var sc = document.createElement('script');
+      sc.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=__tsReady&render=explicit';
+      sc.async = true;
+      document.head.appendChild(sc);
+    }
     f.addEventListener('submit', function (e) {
       e.preventDefault();
       var msg = $('#signupmsg');
       if (f.password.value !== f.password2.value) { say(msg, "Those passwords don't match!"); return; }
       say(msg, 'Creating your account...', true);
-      api('POST', '/api/signup', { username: f.username.value, password: f.password.value }).then(function (r) {
-        if (r.ok) location.href = '/'; else say(msg, errMsg(r));
+      var ts = (tsId !== null && window.turnstile) ? window.turnstile.getResponse(tsId) || '' : '';
+      api('POST', '/api/signup', { username: f.username.value, password: f.password.value, turnstile: ts }).then(function (r) {
+        if (r.ok) { location.href = '/'; return; }
+        say(msg, errMsg(r));
+        if (tsId !== null && window.turnstile) window.turnstile.reset(tsId);
       });
     });
   }

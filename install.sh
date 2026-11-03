@@ -60,6 +60,10 @@ else
   GITHUB="$(https_or_blank "$(ask "GitHub profile link (optional)" "")")"
   DISCORD="$(https_or_blank "$(ask "Discord invite link (optional)" "")")"
   SLINK="$(https_or_blank "$(ask "SlinkGrenade's channel link (optional)" "")")"
+  echo -e "\nOptional: a free Cloudflare Turnstile robot check on the sign-up page."
+  echo "  (Cloudflare dashboard > Turnstile > Add widget for ${DOMAIN}, then copy both keys. Leave blank to skip.)"
+  TS_SITE="$(ask "Turnstile site key (optional)" "")"
+  TS_SECRET="$(ask "Turnstile secret key (optional)" "")"
   PORT="$(free_port)"
   cat > .env <<EOF
 # Made by install.sh on $(date). Edit and run: ./site.sh restart
@@ -72,6 +76,8 @@ LINKEDIN_URL=${LINKEDIN}
 GITHUB_URL=${GITHUB}
 DISCORD_INVITE=${DISCORD}
 SLINKGRENADE_URL=${SLINK}
+TURNSTILE_SITE_KEY=${TS_SITE}
+TURNSTILE_SECRET_KEY=${TS_SECRET}
 EOF
   say "Saved settings to .env"
 fi

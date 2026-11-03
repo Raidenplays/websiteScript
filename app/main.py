@@ -13,6 +13,7 @@ import sqlite3
 import threading
 import time
 import unicodedata
+import urllib.parse
 import urllib.request
 from collections import defaultdict, deque
 from contextlib import contextmanager
@@ -66,6 +67,11 @@ PUBLIC_CONFIG = {
     "linkedin": _https(os.environ.get("LINKEDIN_URL")),
     "email": _email(os.environ.get("CONTACT_EMAIL")),
 }
+# Optional Cloudflare Turnstile robot check on sign-up (free: Cloudflare dashboard > Turnstile).
+TURNSTILE_SITE_KEY = re.sub(r"[^A-Za-z0-9_-]", "", os.environ.get("TURNSTILE_SITE_KEY", ""))
+TURNSTILE_SECRET = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
+TURNSTILE_ON = bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET)
+
 # Set TRUST_CLOUDFLARE=1 when the site sits behind a Cloudflare Tunnel, so rate limits
 # see each visitor's real IP instead of the tunnel's. Only safe if the app port isn't public.
 TRUST_CLOUDFLARE = os.environ.get("TRUST_CLOUDFLARE", "0") == "1"
@@ -307,8 +313,8 @@ COMMON_PW = {"password", "password1", "password123", "12345678", "123456789", "1
 
 
 def check_password(pw, username):
-    if not 8 <= len(pw) <= 128:
-        fail(400, "Passwords have to be 8 to 128 characters.")
+    if not 10 <= len(pw) <= 128:
+        fail(400, "Passwords have to be 10 to 128 characters.")
     if pw.lower() in COMMON_PW or username.lower() in pw.lower():
         fail(400, "That password is too easy to guess. Try something else!")
 
@@ -316,9 +322,10 @@ def check_password(pw, username):
 # ---------------------------------------------------------------- app
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+_TS = " https://challenges.cloudflare.com" if TURNSTILE_ON else ""
+CSP = ("default-src 'self'; script-src 'self'" + _TS + "; style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data: https://i.ytimg.com; "
-       "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://discord.com; "
+       "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://discord.com" + _TS + "; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
@@ -331,8 +338,27 @@ def origin_ok(req: Request):
     return urlparse(origin).netloc == req.headers.get("host")
 
 
+def https_redirect(req: Request):
+    """Behind Cloudflare, send anyone who arrived over plain http:// to https://."""
+    if not (TRUST_CLOUDFLARE and COOKIE_SECURE):
+        return None
+    proto = req.headers.get("x-forwarded-proto", "").lower()
+    if proto != "http" and '"scheme":"http"' not in req.headers.get("cf-visitor", "").replace(" ", ""):
+        return None
+    host = (req.headers.get("host") or "").lower()
+    origins = sorted(ALLOWED_ORIGINS)
+    target = next((o for o in origins if urlparse(o).netloc == host), origins[0] if origins else None)
+    if not target:
+        return None
+    path = req.url.path + ("?" + req.url.query if req.url.query else "")
+    return RedirectResponse(target + path, status_code=308)
+
+
 @app.middleware("http")
 async def security(req: Request, call_next):
+    redirect = https_redirect(req)
+    if redirect:
+        return redirect
     if req.method not in ("GET", "HEAD", "OPTIONS"):
         # Blocks cross-site request forgery: browsers always send Origin on POST/DELETE.
         # The desktop app uses a Bearer token instead of a cookie; browsers never attach those on their
@@ -354,7 +380,7 @@ async def security(req: Request, call_next):
     h["Cross-Origin-Opener-Policy"] = "same-origin"
     h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
     if COOKIE_SECURE:
-        h["Strict-Transport-Security"] = "max-age=31536000"
+        h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if req.url.path.startswith("/api/"):
         h["Cache-Control"] = "no-store"
     return resp
@@ -375,7 +401,10 @@ async def bad_input(req, exc):
 # ---- public config / me
 @app.get("/api/config")
 def config():
-    return PUBLIC_CONFIG
+    # Only what the page scripts need. The email address is NOT sent here (it's only in page links,
+    # where Cloudflare's email protection can hide it from scrapers).
+    return {"discord": PUBLIC_CONFIG["discord"], "slinkgrenade": PUBLIC_CONFIG["slinkgrenade"],
+            "turnstile": TURNSTILE_SITE_KEY if TURNSTILE_ON else ""}
 
 
 @app.get("/api/me")
@@ -390,10 +419,31 @@ class Creds(BaseModel):
     password: str
 
 
+class SignupIn(Creds):
+    turnstile: str = ""
+
+
+def turnstile_ok(token, ip):
+    if not TURNSTILE_ON:
+        return True
+    if not token or len(token) > 2048:
+        return False
+    try:
+        data = urllib.parse.urlencode({"secret": TURNSTILE_SECRET, "response": token, "remoteip": ip}).encode()
+        r = urllib.request.Request("https://challenges.cloudflare.com/turnstile/v0/siteverify", data=data,
+                                   headers={"User-Agent": "RaidenSite/1.0"})
+        with urllib.request.urlopen(r, timeout=10) as f:
+            return bool(json.loads(f.read(100_000)).get("success"))
+    except Exception:
+        return False
+
+
 @app.post("/api/signup")
-def signup(body: Creds, req: Request, resp: Response):
+def signup(body: SignupIn, req: Request, resp: Response):
     if not limiter.hit("signup:" + client_ip(req), 10, 3600):
         fail(429, "Too many sign-ups from here. Try again in an hour.")
+    if not turnstile_ok(body.turnstile, client_ip(req)):
+        fail(400, "Please finish the robot check, then try again.")
     name = body.username.strip()
     if not USER_RE.fullmatch(name):
         fail(400, "Usernames are 3-20 letters, numbers or underscores.")
@@ -964,6 +1014,17 @@ def style_css():
 @app.get("/site.js")
 def site_js():
     return FileResponse(STATIC / "site.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/.well-known/security.txt")
+def security_txt():
+    contact = ("mailto:" + PUBLIC_CONFIG["email"]) if PUBLIC_CONFIG["email"] else (PUBLIC_CONFIG["linkedin"] or PUBLIC_CONFIG["discord"])
+    if not contact:
+        fail(404, "Not found")
+    expires = time.strftime("%Y-%m-%dT00:00:00Z", time.gmtime(time.time() + 300 * 86400))
+    origin = sorted(ALLOWED_ORIGINS)[0] if ALLOWED_ORIGINS else ""
+    body = f"Contact: {contact}\nExpires: {expires}\nPreferred-Languages: en\n" + (f"Canonical: {origin}/.well-known/security.txt\n" if origin else "")
+    return Response(body, media_type="text/plain")
 
 
 @app.get("/robots.txt")

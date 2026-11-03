@@ -440,7 +440,7 @@ DEFAULT = {
                   "text": "A Lenovo ThinkCentre M720q I set up as an always-on Linux server.\n\n"
                           "- Debian with Runtipi to deploy self-hosted apps in Docker\n- Hosts this website through a Cloudflare Tunnel\n"
                           "- Runs a Navidrome music server at music.raidenbrundin.com\n- Runs a public Minecraft server with Crafty Controller\n"
-                          "- Remote admin access over Tailscale; router port forwarding configured on a Bell Giga Hub"},
+                          "- Remote admin access over Tailscale"},
                  {"icon": "m", "icon_color": "lime", "title": "Matcha Music", "subtitle": "",
                   "tags": ["Android", "Kotlin", "Jetpack Compose", "Subsonic API"],
                   "text": "An Android music player for self-hosted music libraries. It streams from Navidrome and other Subsonic-compatible servers, supports offline downloads, and is being prepared for release on Google Play."},
