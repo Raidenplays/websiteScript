@@ -168,6 +168,12 @@ class Bridge(
     }
 
     private fun send(method: String, path: String, payload: ByteArray?, contentType: String?): JSONObject {
+        val first = sendOnce(method, path, payload, contentType)
+        // A phone switching networks can drop one request; safely retry reads once.
+        return if (first.optInt("status") == 0 && method.uppercase() == "GET" && server != null) sendOnce(method, path, payload, contentType) else first
+    }
+
+    private fun sendOnce(method: String, path: String, payload: ByteArray?, contentType: String?): JSONObject {
         val base = server ?: return fail(0, "Not connected.")
         val m = method.uppercase()
         if (!path.startsWith("/api/") || m !in setOf("GET", "POST", "PUT", "DELETE")) return fail(0, "Bad request.")
@@ -191,7 +197,8 @@ class Bridge(
             val data = try { JSONObject(text) } catch (_: Exception) { JSONObject() }
             JSONObject().put("ok", code in 200..299).put("status", code).put("data", data)
         } catch (e: IOException) {
-            fail(0, "Couldn't reach $base. Check the address and your internet connection.")
+            // Show the real reason too, so problems can be tracked down.
+            fail(0, "Couldn't reach $base. Check your internet connection and try again.\n(${e.javaClass.simpleName}: ${e.message ?: "no details"})")
         } finally {
             conn.disconnect()
         }
