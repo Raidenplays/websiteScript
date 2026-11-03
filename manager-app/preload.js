@@ -9,5 +9,8 @@ contextBridge.exposeInMainWorld('site', {
   open: (p) => ipcRenderer.invoke('open', p),
   uploadPic: (caption) => ipcRenderer.invoke('uploadPic', { caption }),
   uploadFile: (o) => ipcRenderer.invoke('uploadFile', o),
+  uploadZip: (o) => ipcRenderer.invoke('uploadZip', o),
+  uploadFolder: (o) => ipcRenderer.invoke('uploadFolder', o),
+  onProgress: (cb) => ipcRenderer.on('progress', (_e, text) => cb(String(text))),
   setDirty: (d) => ipcRenderer.send('dirty', !!d),
 });

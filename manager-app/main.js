@@ -123,20 +123,74 @@ ipcMain.handle('uploadPic', async (_e, a) => {
   return request('POST', '/api/admin/pics', fd, true);
 });
 
-const FILE_EXTS = ['pdf', 'html', 'htm', 'txt', 'md', 'csv', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp3', 'mp4', 'zip', 'docx', 'xlsx', 'pptx', 'odt'];
+const FILE_EXTS = ['pdf', 'html', 'htm', 'css', 'js', 'json', 'txt', 'md', 'csv', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico',
+  'woff', 'woff2', 'ttf', 'otf', 'mp3', 'wav', 'ogg', 'mp4', 'webm', 'zip', 'docx', 'xlsx', 'pptx', 'odt'];
+const MAX_FILE = 25 * 1024 * 1024;
+const cleanFolder = (f) => String(f || '').replace(/\\/g, '/').split('/').filter(Boolean).join('/').slice(0, 300);
+const safeSeg = (n) => String(n || 'folder').replace(/[^A-Za-z0-9._ ()~-]/g, '-').replace(/^[^A-Za-z0-9]+/, '').replace(/[. ]+$/, '').slice(0, 100) || 'folder';
+const progress = (text) => { if (win) win.webContents.send('progress', text); };
+
+async function postFile(buf, fileName, extra) {
+  const fd = new FormData();
+  fd.append('file', new Blob([buf]), fileName);
+  for (const [k, v] of Object.entries(extra)) fd.append(k, v);
+  return request('POST', extra.__zip ? '/api/admin/files/zip' : '/api/admin/files', fd, true);
+}
+
 ipcMain.handle('uploadFile', async (_e, a) => {
-  const res = await dialog.showOpenDialog(win, {
-    title: 'Pick a file to upload', properties: ['openFile'],
-    filters: [{ name: 'Allowed files', extensions: FILE_EXTS }],
-  });
+  const res = await dialog.showOpenDialog(win, { title: 'Pick a file to upload', properties: ['openFile'], filters: [{ name: 'Allowed files', extensions: FILE_EXTS }] });
   if (res.canceled || !res.filePaths[0]) return { canceled: true };
   const fp = res.filePaths[0];
-  if (fs.statSync(fp).size > 25 * 1024 * 1024) return { ok: false, data: { error: 'That file is too big (max 25 MB).' } };
-  const fd = new FormData();
-  fd.append('file', new Blob([fs.readFileSync(fp)]), path.basename(fp));
-  fd.append('name', String((a && a.name) || '').slice(0, 100));
-  fd.append('replace', a && a.replace ? '1' : '0');
-  return request('POST', '/api/admin/files', fd, true);
+  if (fs.statSync(fp).size > MAX_FILE) return { ok: false, data: { error: 'That file is too big (max 25 MB).' } };
+  return postFile(fs.readFileSync(fp), path.basename(fp), {
+    name: String((a && a.name) || '').slice(0, 100), replace: a && a.replace ? '1' : '0', folder: cleanFolder(a && a.folder),
+  });
+});
+
+ipcMain.handle('uploadZip', async (_e, a) => {
+  const res = await dialog.showOpenDialog(win, { title: 'Pick a .zip to unpack into a folder', properties: ['openFile'], filters: [{ name: 'Zip files', extensions: ['zip'] }] });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  const fp = res.filePaths[0];
+  if (fs.statSync(fp).size > MAX_FILE) return { ok: false, data: { error: 'That .zip is too big (max 25 MB).' } };
+  const parent = cleanFolder(a && a.folder);
+  const name = safeSeg(String((a && a.name) || '').trim() || path.basename(fp).replace(/\.zip$/i, ''));
+  progress('Uploading and unpacking...');
+  const r = await postFile(fs.readFileSync(fp), path.basename(fp), { __zip: '1', folder: parent ? parent + '/' + name : name, replace: a && a.replace ? '1' : '0' });
+  return r;
+});
+
+ipcMain.handle('uploadFolder', async (_e, a) => {
+  const res = await dialog.showOpenDialog(win, { title: 'Pick a folder to upload', properties: ['openDirectory'] });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  const root = res.filePaths[0];
+  const parent = cleanFolder(a && a.folder);
+  const dest = (parent ? parent + '/' : '') + safeSeg(String((a && a.name) || '').trim() || path.basename(root));
+  const list = [];
+  (function walk(dir, rel, depth) {
+    if (depth > 5) return;
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (ent.name.startsWith('.') || ent.name === 'node_modules') continue;
+      const full = path.join(dir, ent.name), r = rel ? rel + '/' + ent.name : ent.name;
+      if (ent.isDirectory()) walk(full, r, depth + 1);
+      else if (ent.isFile()) list.push({ full, rel: r });
+    }
+  })(root, '', 0);
+  if (list.length > 1000) return { ok: false, data: { error: 'That folder has more than 1000 files.' } };
+  let uploaded = 0, total = 0;
+  const skipped = [];
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i], ext = f.rel.split('.').pop().toLowerCase();
+    if (!f.rel.includes('.') || !FILE_EXTS.includes(ext)) { skipped.push(f.rel + ' (file type)'); continue; }
+    const size = fs.statSync(f.full).size;
+    if (size > MAX_FILE) { skipped.push(f.rel + ' (too big)'); continue; }
+    total += size;
+    if (total > 150 * 1024 * 1024) { skipped.push('...stopped: over 150 MB'); break; }
+    progress('Uploading ' + (i + 1) + ' of ' + list.length + ': ' + f.rel);
+    const sub = f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) : '';
+    const r = await postFile(fs.readFileSync(f.full), path.basename(f.full), { folder: sub ? dest + '/' + sub : dest, keep_name: '1', replace: '1' });
+    if (r.ok) uploaded++; else skipped.push(f.rel + ': ' + ((r.data && r.data.error) || 'failed'));
+  }
+  return { ok: uploaded > 0, status: 200, data: { folder: dest, uploaded, skipped, error: uploaded ? undefined : 'Nothing in that folder could be uploaded.' } };
 });
 
 ipcMain.on('dirty', (_e, d) => { dirty = !!d; });

@@ -145,3 +145,8 @@ table.grid tr.sel td { background: #e1f1d2; }
   .loginbox { width: 92vw; }
   .picgrid { grid-template-columns: repeat(2, 1fr); }
 }
+
+.crumbs { margin: 0 0 6px; font-weight: 600; }
+.crumbs a, a.folderlink { color: #2f7300; cursor: pointer; text-decoration: none; font-weight: 600; }
+.crumbs a:hover, a.folderlink:hover { text-decoration: underline; }
+.btnwrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }

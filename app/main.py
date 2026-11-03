@@ -9,12 +9,14 @@ import io
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import threading
 import time
 import unicodedata
 import urllib.parse
 import urllib.request
+import zipfile
 from collections import defaultdict, deque
 from contextlib import contextmanager
 from pathlib import Path
@@ -686,78 +688,270 @@ def get_pic(name: str):
                         headers={"Cache-Control": "public, max-age=604800, immutable"})
 
 
-# ---- uploaded files (/files/NAME)
+# ---- uploaded files and folders (/files/PATH)
 FILE_TYPES = {
     "pdf": "application/pdf", "html": "text/html; charset=utf-8", "htm": "text/html; charset=utf-8",
+    "css": "text/css; charset=utf-8", "js": "text/javascript; charset=utf-8", "json": "application/json",
     "txt": "text/plain; charset=utf-8", "md": "text/plain; charset=utf-8", "csv": "text/csv; charset=utf-8",
     "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
-    "mp3": "audio/mpeg", "mp4": "video/mp4", "zip": "application/zip",
+    "svg": "image/svg+xml", "ico": "image/x-icon",
+    "woff": "font/woff", "woff2": "font/woff2", "ttf": "font/ttf", "otf": "font/otf",
+    "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg", "mp4": "video/mp4", "webm": "video/webm",
+    "zip": "application/zip",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "odt": "application/vnd.oasis.opendocument.text",
 }
-FILE_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,79}\.([a-z0-9]{2,4})")
+# One part of a path. Must start with a letter/number, so "." and ".." can never match.
+SEG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._ ()~-]{0,99}")
+MAX_DEPTH = 6
+MAX_ZIP_FILES = 1000
+NOT_LINKED = {"css", "js", "json", "woff", "woff2", "ttf", "otf", "ico"}  # not offered in the link picker
+MAX_ZIP_TOTAL = 150 * 1024 * 1024
+
+
+def _ext(name):
+    return name.rsplit(".", 1)[1].lower() if "." in name else ""
+
+
+def safe_rel(path, want_file):
+    """Check a relative path like 'my-site/img/logo.png'. Returns the clean path or None."""
+    parts = [p for p in (path or "").replace("\\", "/").split("/") if p]
+    if not parts or len(parts) > MAX_DEPTH or not all(SEG_RE.fullmatch(p) and not p.endswith((".", " ")) for p in parts):
+        return None
+    if want_file and _ext(parts[-1]) not in FILE_TYPES:
+        return None
+    return "/".join(parts)
+
+
+def under_files(rel):
+    p = (FILES / rel).resolve()
+    if FILES.resolve() not in p.parents:
+        fail(400, "Bad path.")
+    return p
+
+
+def clean_folder(raw):
+    raw = (raw or "").strip().strip("/")
+    if not raw:
+        return ""
+    clean = safe_rel(raw, want_file=False)
+    if clean is None:
+        fail(400, "Folder names can use letters, numbers, spaces, dots, dashes and underscores.")
+    return clean
 
 
 def clean_file_name(raw):
-    """'My Resume (2026).PDF' -> 'my-resume-2026.pdf'"""
+    """'My Resume (2026).PDF' -> 'my-resume-2026.pdf' (used for single uploads, for tidy links)"""
     raw = unicodedata.normalize("NFKD", raw or "").encode("ascii", "ignore").decode().lower().strip()
-    raw = raw.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    raw = raw.replace("\\", "/").rsplit("/", 1)[-1]
     stem, dot, ext = raw.rpartition(".")
     if not dot:
         fail(400, "The file needs an extension like .pdf or .html.")
     stem = re.sub(r"[^a-z0-9_-]+", "-", stem).strip("-_")[:80] or "file"
     name = stem + "." + ext
-    m = FILE_RE.fullmatch(name)
-    if not m or m.group(1) not in FILE_TYPES:
+    if ext not in FILE_TYPES:
         fail(400, "That kind of file isn't allowed. Allowed: " + ", ".join(sorted(FILE_TYPES)))
     return name
 
 
-@app.get("/files/{name}")
-def get_file(name: str):
-    m = FILE_RE.fullmatch(name)
-    if not m or m.group(1) not in FILE_TYPES or not (FILES / name).is_file():
+def file_url(rel):
+    return "/files/" + urllib.parse.quote(rel)
+
+
+@app.get("/files/{path:path}")
+def get_file(path: str):
+    rel = safe_rel(path, want_file=False)
+    if rel is None:
         fail(404, "Not found")
-    return FileResponse(FILES / name, media_type=FILE_TYPES[m.group(1)], headers={"Cache-Control": "no-cache"})
+    target = under_files(rel)
+    if target.is_dir():
+        if not path.endswith("/"):  # so relative links inside the folder work
+            return RedirectResponse(file_url(rel) + "/", status_code=308)
+        for index in ("index.html", "index.htm"):
+            if (target / index).is_file():
+                return FileResponse(target / index, media_type=FILE_TYPES["html"], headers={"Cache-Control": "no-cache"})
+        fail(404, "Not found")
+    if not target.is_file() or _ext(target.name) not in FILE_TYPES:
+        fail(404, "Not found")
+    return FileResponse(target, media_type=FILE_TYPES[_ext(target.name)], headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/admin/files")
-def list_files(req: Request):
+def list_files(req: Request, folder: str = ""):
     need_admin(req)
-    out = []
-    for f in sorted(FILES.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True):
-        if f.is_file() and FILE_RE.fullmatch(f.name):
+    rel = clean_folder(folder)
+    base = under_files(rel) if rel else FILES
+    if not base.is_dir():
+        fail(404, "That folder doesn't exist.")
+    folders, files = [], []
+    for f in sorted(base.iterdir(), key=lambda f: f.name.lower()):
+        if f.name.startswith("."):
+            continue
+        path = (rel + "/" if rel else "") + f.name
+        if f.is_dir() and safe_rel(path, want_file=False):
+            count = sum(1 for x in f.rglob("*") if x.is_file())
+            folders.append({"name": f.name, "path": path, "url": file_url(path) + "/", "count": count,
+                            "has_index": (f / "index.html").is_file() or (f / "index.htm").is_file()})
+        elif f.is_file() and safe_rel(path, want_file=True):
             st = f.stat()
-            out.append({"name": f.name, "url": "/files/" + f.name, "size": st.st_size, "modified": int(st.st_mtime)})
-    return {"files": out}
+            files.append({"name": f.name, "path": path, "url": file_url(path), "size": st.st_size, "modified": int(st.st_mtime)})
+    # every linkable file/page, for the link picker
+    every = []
+    for f in sorted(FILES.rglob("*")):
+        r = f.relative_to(FILES).as_posix()
+        if any(p.startswith(".") for p in r.split("/")):
+            continue
+        if f.is_dir() and safe_rel(r, want_file=False) and ((f / "index.html").is_file() or (f / "index.htm").is_file()):
+            every.append(file_url(r) + "/")  # a mini-site's own address
+        elif f.is_file() and safe_rel(r, want_file=True) and _ext(f.name) not in NOT_LINKED:
+            every.append(file_url(r))
+        if len(every) >= 500:
+            break
+    return {"folder": rel, "folders": folders, "files": files, "all": every}
+
+
+def _write_atomic(target, data):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.parent / (".upload-" + secrets.token_hex(8))
+    tmp.write_bytes(data)
+    tmp.replace(target)
 
 
 @app.post("/api/admin/files")
-async def upload_file(req: Request, file: UploadFile = File(...), name: str = Form(""), replace: str = Form("0")):
+async def upload_file(req: Request, file: UploadFile = File(...), name: str = Form(""), replace: str = Form("0"),
+                      folder: str = Form(""), keep_name: str = Form("0")):
     need_admin(req)
-    final = clean_file_name(name.strip() or file.filename or "")
+    dest = clean_folder(folder)
+    raw = name.strip() or file.filename or ""
+    if keep_name == "1":  # folder uploads keep exact names so the pages' own links keep working
+        final = safe_rel(raw.replace("\\", "/").rsplit("/", 1)[-1], want_file=True)
+        if final is None:
+            fail(400, f"Skipped {raw[:60]}: unsupported name or file type.")
+    else:
+        final = clean_file_name(raw)
+    rel = (dest + "/" if dest else "") + final
+    if safe_rel(rel, want_file=True) is None:
+        fail(400, "That path is too deep or not allowed.")
     data = await file.read(MAX_FILE + 1)
     if len(data) > MAX_FILE:
         fail(413, "That file is too big (max 25 MB).")
     if not data:
         fail(400, "That file is empty.")
-    target = FILES / final
+    target = under_files(rel)
+    if target.is_dir():
+        fail(409, f"There's a folder called {final} there.")
     if target.exists() and replace != "1":
         fail(409, f"There's already a file called {final}. Tick 'Replace' to overwrite it.")
-    tmp = FILES / (".upload-" + secrets.token_hex(8))
-    tmp.write_bytes(data)
-    tmp.replace(target)
-    return {"ok": True, "name": final, "url": "/files/" + final}
+    _write_atomic(target, data)
+    return {"ok": True, "name": final, "path": rel, "url": file_url(rel)}
 
 
-@app.delete("/api/admin/files/{name}")
-def delete_file(name: str, req: Request):
+@app.post("/api/admin/files/zip")
+async def upload_zip(req: Request, file: UploadFile = File(...), folder: str = Form(""), replace: str = Form("0")):
+    """Unpack a .zip into a folder (e.g. a whole mini-site with index.html)."""
     need_admin(req)
-    if not FILE_RE.fullmatch(name):
+    dest = clean_folder(folder)
+    if not dest:
+        fail(400, "Pick a folder name to unpack into.")
+    data = await file.read(MAX_FILE + 1)
+    if len(data) > MAX_FILE:
+        fail(413, "That .zip is too big (max 25 MB).")
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        infos = zf.infolist()
+    except zipfile.BadZipFile:
+        fail(400, "That isn't a valid .zip file.")
+    if len(infos) > MAX_ZIP_FILES:
+        fail(400, f"That .zip has too many files (max {MAX_ZIP_FILES}).")
+    names = [i.filename.replace("\\", "/") for i in infos if not i.is_dir()]
+    names = [n for n in names if not n.startswith("__MACOSX/") and not n.rsplit("/", 1)[-1].startswith(".")]
+    # If everything is inside one top folder (common when zipping a folder), drop that level.
+    tops = {n.split("/", 1)[0] for n in names}
+    strip = len(tops) == 1 and all("/" in n for n in names)
+    target_dir = under_files(dest)
+    if target_dir.exists() and replace != "1":
+        fail(409, f"There's already a folder called {dest}. Tick 'Replace' to overwrite it.")
+    staging = FILES / (".unzip-" + secrets.token_hex(8))
+    staging.mkdir()
+    total, written, skipped = 0, 0, []
+    try:
+        for info in infos:
+            n = info.filename.replace("\\", "/")
+            if info.is_dir() or n not in names:
+                continue
+            rel = n.split("/", 1)[1] if strip else n
+            clean = safe_rel(rel, want_file=True)
+            if clean is None or len(dest.split("/")) + len(clean.split("/")) > MAX_DEPTH:
+                skipped.append(rel[:80])
+                continue
+            with zf.open(info) as src:
+                blob = src.read(MAX_FILE + 1)  # never trust the sizes a zip claims
+            if len(blob) > MAX_FILE:
+                skipped.append(rel[:80] + " (too big)")
+                continue
+            total += len(blob)
+            if total > MAX_ZIP_TOTAL:
+                fail(400, "That .zip unpacks to more than 150 MB.")
+            out = (staging / clean).resolve()
+            if staging.resolve() not in out.parents:
+                skipped.append(rel[:80])
+                continue
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(blob)
+            written += 1
+        if not written:
+            fail(400, "Nothing in that .zip could be used (check the file types).")
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        staging.replace(target_dir)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+    return {"ok": True, "folder": dest, "url": file_url(dest) + "/", "files": written, "skipped": skipped[:50],
+            "has_index": (target_dir / "index.html").is_file() or (target_dir / "index.htm").is_file()}
+
+
+class FolderIn(BaseModel):
+    path: str
+
+
+@app.post("/api/admin/folders")
+def make_folder(body: FolderIn, req: Request):
+    need_admin(req)
+    rel = clean_folder(body.path)
+    if not rel:
+        fail(400, "Give the folder a name.")
+    target = under_files(rel)
+    if target.exists():
+        fail(409, "That already exists.")
+    target.mkdir(parents=True)
+    return {"ok": True, "path": rel, "url": file_url(rel) + "/"}
+
+
+@app.delete("/api/admin/folders/{path:path}")
+def delete_folder(path: str, req: Request):
+    need_admin(req)
+    rel = clean_folder(path)
+    if not rel:
+        fail(400, "Can't delete the main Files folder.")
+    target = under_files(rel)
+    if target.is_dir():
+        shutil.rmtree(target)
+    return {"ok": True}
+
+
+@app.delete("/api/admin/files/{path:path}")
+def delete_file(path: str, req: Request):
+    need_admin(req)
+    rel = safe_rel(path, want_file=True)
+    if rel is None:
         fail(404, "Not found")
-    (FILES / name).unlink(missing_ok=True)
+    target = under_files(rel)
+    if target.is_file():
+        target.unlink()
     return {"ok": True}
 
 

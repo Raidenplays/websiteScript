@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.documentfile.provider.DocumentFile
+import org.json.JSONArray
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import org.json.JSONObject
@@ -22,7 +24,8 @@ class Bridge(
     private val activity: Activity,
     private val web: WebView,
     private val launchPicker: () -> Unit,
-    private val launchFilePicker: () -> Unit,
+    private val launchFilePicker: (Array<String>) -> Unit,
+    private val launchFolderPicker: () -> Unit,
 ) {
     private val exec = Executors.newFixedThreadPool(3)
     private val store = TokenStore(activity)
@@ -32,7 +35,9 @@ class Bridge(
     @Volatile var dirty = false
         private set
     private var pendingUpload: Pair<Int, String>? = null
-    private var pendingFile: Triple<Int, String, Boolean>? = null
+    /** A file/zip/folder pick that's waiting for the user: which call, and what it asked for. */
+    private data class Pick(val id: Int, val kind: String, val name: String, val replace: Boolean, val folder: String)
+    private var pendingPick: Pick? = null
 
     @JavascriptInterface
     fun setDirty(value: Boolean) {
@@ -42,11 +47,15 @@ class Bridge(
     @JavascriptInterface
     fun call(id: Int, name: String, argsJson: String) {
         val args = try { JSONObject(argsJson) } catch (e: Exception) { JSONObject() }
-        if (name == "uploadFile") {
+        if (name == "uploadFile" || name == "uploadZip" || name == "uploadFolder") {
             activity.runOnUiThread {
-                pendingFile?.let { resolve(it.first, JSONObject().put("canceled", true)) }
-                pendingFile = Triple(id, args.optString("name").take(100), args.optBoolean("replace"))
-                launchFilePicker()
+                pendingPick?.let { resolve(it.id, JSONObject().put("canceled", true)) }
+                pendingPick = Pick(id, name, args.optString("name").take(100), args.optBoolean("replace"), cleanFolder(args.optString("folder")))
+                when (name) {
+                    "uploadFile" -> launchFilePicker(arrayOf("*/*"))
+                    "uploadZip" -> launchFilePicker(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                    else -> launchFolderPicker()
+                }
             }
             return
         }
@@ -87,15 +96,26 @@ class Bridge(
         }
     }
 
-    fun onFilePicked(uri: Uri?) {
-        val (id, saveAs, replace) = pendingFile ?: return
-        pendingFile = null
+    fun onFilePicked(uri: Uri?) = onPicked(uri)
+    fun onFolderPicked(uri: Uri?) = onPicked(uri)
+
+    private fun onPicked(uri: Uri?) {
+        val pick = pendingPick ?: return
+        pendingPick = null
         if (uri == null) {
-            resolve(id, JSONObject().put("canceled", true))
+            resolve(pick.id, JSONObject().put("canceled", true))
             return
         }
         exec.execute {
-            resolve(id, try { uploadFile(uri, saveAs, replace) } catch (e: Exception) { fail(0, "Couldn't upload that file: ${e.message}") })
+            resolve(pick.id, try {
+                when (pick.kind) {
+                    "uploadFile" -> uploadFile(uri, pick.name, pick.replace, pick.folder)
+                    "uploadZip" -> uploadZip(uri, pick)
+                    else -> uploadFolder(uri, pick)
+                }
+            } catch (e: Exception) {
+                fail(0, "Upload failed: ${e.message}")
+            })
         }
     }
 
@@ -205,19 +225,89 @@ class Bridge(
         }
     }
 
-    private fun uploadFile(uri: Uri, saveAs: String, replace: Boolean): JSONObject {
-        val bytes = readLimited(uri, MAX_FILE) ?: return fail(0, "That file is too big (max 25 MB).")
-        val fileName = displayName(uri).replace(Regex("[\\r\\n\"/\\\\]"), "_").take(150)
+    private fun cleanFolder(f: String): String =
+        f.replace('\\', '/').split('/').filter { it.isNotBlank() }.joinToString("/").take(300)
+
+    private fun safeSeg(n: String): String =
+        n.replace(Regex("[^A-Za-z0-9._ ()~-]"), "-").replace(Regex("^[^A-Za-z0-9]+"), "").replace(Regex("[. ]+$"), "").take(100).ifEmpty { "folder" }
+
+    private fun progress(text: String) {
+        web.post { web.evaluateJavascript("window.__siteProgress && window.__siteProgress(${JSONObject.quote(text)})", null) }
+    }
+
+    private fun multipart(fields: List<Pair<String, String>>, fileName: String, mime: String, bytes: ByteArray): Pair<ByteArray, String> {
         val boundary = "----RaidenSite" + UUID.randomUUID().toString().replace("-", "")
-        val cleanName = saveAs.replace(Regex("[\\r\\n\"]"), " ")
+        val safeName = fileName.replace(Regex("[\\r\\n\"/\\\\]"), "_").take(150)
         val body = ByteArrayOutputStream().apply {
-            write(("--$boundary\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\n$cleanName\r\n").toByteArray())
-            write(("--$boundary\r\nContent-Disposition: form-data; name=\"replace\"\r\n\r\n${if (replace) "1" else "0"}\r\n").toByteArray())
-            write(("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$fileName\"\r\nContent-Type: application/octet-stream\r\n\r\n").toByteArray())
+            for ((k, v) in fields) {
+                write(("--$boundary\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n${v.replace(Regex("[\\r\\n]"), " ")}\r\n").toByteArray())
+            }
+            write(("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$safeName\"\r\nContent-Type: $mime\r\n\r\n").toByteArray())
             write(bytes)
             write(("\r\n--$boundary--\r\n").toByteArray())
         }.toByteArray()
-        return send("POST", "/api/admin/files", body, "multipart/form-data; boundary=$boundary")
+        return body to "multipart/form-data; boundary=$boundary"
+    }
+
+    private fun uploadFile(uri: Uri, saveAs: String, replace: Boolean, folder: String): JSONObject {
+        val bytes = readLimited(uri, MAX_FILE) ?: return fail(0, "That file is too big (max 25 MB).")
+        val (body, type) = multipart(
+            listOf("name" to saveAs, "replace" to (if (replace) "1" else "0"), "folder" to folder),
+            displayName(uri), "application/octet-stream", bytes,
+        )
+        return send("POST", "/api/admin/files", body, type)
+    }
+
+    private fun uploadZip(uri: Uri, pick: Pick): JSONObject {
+        val bytes = readLimited(uri, MAX_FILE) ?: return fail(0, "That .zip is too big (max 25 MB).")
+        val fname = displayName(uri)
+        val name = safeSeg(pick.name.trim().ifEmpty { fname.replace(Regex("(?i)\\.zip$"), "") })
+        val dest = if (pick.folder.isEmpty()) name else "${pick.folder}/$name"
+        progress("Uploading and unpacking...")
+        val (body, type) = multipart(listOf("folder" to dest, "replace" to (if (pick.replace) "1" else "0")), fname, "application/zip", bytes)
+        return send("POST", "/api/admin/files/zip", body, type)
+    }
+
+    private fun uploadFolder(treeUri: Uri, pick: Pick): JSONObject {
+        val root = DocumentFile.fromTreeUri(activity, treeUri) ?: return fail(0, "Couldn't open that folder.")
+        val name = safeSeg(pick.name.trim().ifEmpty { root.name ?: "folder" })
+        val dest = if (pick.folder.isEmpty()) name else "${pick.folder}/$name"
+        val found = mutableListOf<Pair<DocumentFile, String>>()
+        fun walk(dir: DocumentFile, rel: String, depth: Int) {
+            if (depth > 5 || found.size > 1000) return
+            for (f in dir.listFiles()) {
+                val n = f.name ?: continue
+                if (n.startsWith(".")) continue
+                val r = if (rel.isEmpty()) n else "$rel/$n"
+                if (f.isDirectory) walk(f, r, depth + 1) else if (f.isFile) found.add(f to r)
+            }
+        }
+        walk(root, "", 0)
+        if (found.size > 1000) return fail(0, "That folder has more than 1000 files.")
+        var uploaded = 0
+        var total = 0L
+        val skipped = JSONArray()
+        for ((i, pair) in found.withIndex()) {
+            val (doc, rel) = pair
+            val ext = rel.substringAfterLast('.', "").lowercase()
+            if (ext !in ALLOWED_EXTS) { skipped.put("$rel (file type)"); continue }
+            val bytes = readLimited(doc.uri, MAX_FILE)
+            if (bytes == null) { skipped.put("$rel (too big)"); continue }
+            total += bytes.size
+            if (total > 150L * 1024 * 1024) { skipped.put("...stopped: over 150 MB"); break }
+            progress("Uploading ${i + 1} of ${found.size}: $rel")
+            val sub = rel.substringBeforeLast('/', "")
+            val (body, type) = multipart(
+                listOf("folder" to (if (sub.isEmpty()) dest else "$dest/$sub"), "keep_name" to "1", "replace" to "1"),
+                doc.name ?: "file", "application/octet-stream", bytes,
+            )
+            val r = send("POST", "/api/admin/files", body, type)
+            if (r.optBoolean("ok")) uploaded++
+            else skipped.put("$rel: " + (r.optJSONObject("data")?.optString("error") ?: "failed"))
+        }
+        val data = JSONObject().put("folder", dest).put("uploaded", uploaded).put("skipped", skipped)
+        if (uploaded == 0) data.put("error", "Nothing in that folder could be uploaded.")
+        return JSONObject().put("ok", uploaded > 0).put("status", 200).put("data", data)
     }
 
     // ------------------------------------------------------------------ http
@@ -275,5 +365,9 @@ class Bridge(
     companion object {
         private const val MAX_UPLOAD = 10 * 1024 * 1024
         private const val MAX_FILE = 25 * 1024 * 1024
+        private val ALLOWED_EXTS = setOf(
+            "pdf", "html", "htm", "css", "js", "json", "txt", "md", "csv", "png", "jpg", "jpeg", "gif", "webp", "svg", "ico",
+            "woff", "woff2", "ttf", "otf", "mp3", "wav", "ogg", "mp4", "webm", "zip", "docx", "xlsx", "pptx", "odt",
+        )
     }
 }

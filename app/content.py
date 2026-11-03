@@ -66,7 +66,7 @@ def _url(v):
         return v
     if re.fullmatch(r"https://[^\s\"'<>]{1,500}", v):
         return v
-    if re.fullmatch(r"/[A-Za-z0-9/_.#-]{0,100}", v):
+    if re.fullmatch(r"/[A-Za-z0-9/_.#%()~-]{0,300}", v):
         return v
     if re.fullmatch(r"mailto:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", v):
         return v

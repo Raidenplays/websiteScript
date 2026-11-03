@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var site = window.site;
-  var S = { files: [], server: '', name: '', content: null, saved: null, version: 0, dirty: false, view: 'pages', tab: 0 };
+  var S = { files: [], dir: '', listing: null, server: '', name: '', content: null, saved: null, version: 0, dirty: false, view: 'pages', tab: 0 };
 
   /* ------------------------------------------------------------ helpers */
   function $(s, r) { return (r || document).querySelector(s); }
@@ -168,7 +168,7 @@
     var dl = el('datalist', { id: listId });
     LINK_OPTIONS.forEach(function (o) { dl.appendChild(el('option', { value: o[0], text: o[1] })); });
     S.content.tabs.forEach(function (t, i) { dl.appendChild(el('option', { value: i === 0 ? '/' : '/' + t.slug, text: 'Page: ' + t.title })); });
-    S.files.forEach(function (f) { dl.appendChild(el('option', { value: f.url, text: 'File: ' + f.name })); });
+    S.files.forEach(function (u) { dl.appendChild(el('option', { value: u, text: 'File: ' + decodeURIComponent(u.slice(7)) })); });
     var i = input(obj, key, { list: listId, placeholder: 'https://...  or  /blog  or  @email' }, onchange);
     var wrap = el('span', null, [i, dl]);
     return wrap;
@@ -463,51 +463,120 @@
     });
   }
 
-  /* ------------------------------------------------------------ files */
+  /* ------------------------------------------------------------ files & folders */
   function loadFiles(then) {
-    return api('GET', '/api/admin/files').then(function (r) { if (r.ok) S.files = r.data.files; if (then) then(); });
+    return api('GET', '/api/admin/files?folder=' + encodeURIComponent(S.dir)).then(function (r) {
+      if (r.ok) { S.listing = r.data; S.files = r.data.all; }
+      else if (r.status === 404 && S.dir) { S.dir = ''; return loadFiles(then); }
+      if (then) then();
+    });
   }
   function fmtSize(b) { return b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
   function copyText(text) {
     var done = function () { toast('Link copied: ' + text); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { fallback(); });
-    else fallback();
     function fallback() { var t = el('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) { toast(text); } t.remove(); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+  if (site.onProgress) site.onProgress(function (t) { toast(t); });
+  function uploadResult(r, what) {
+    if (r.canceled) return;
+    if (!r.ok) { toast(err(r), true); return; }
+    var d = r.data || {}, skipped = d.skipped || [];
+    if (what === 'file') toast('Uploaded! Link: ' + d.url);
+    else toast('Uploaded ' + (d.files != null ? d.files : d.uploaded) + ' files into ' + d.folder + '/' + (skipped.length ? ' (skipped ' + skipped.length + ')' : ''));
+    if (skipped.length) setTimeout(function () { alert('These were skipped:\n\n' + skipped.slice(0, 30).join('\n')); }, 300);
+    loadFiles(render);
   }
   function viewFiles(view) {
     view.appendChild(el('h2', { text: 'Files' }));
-    view.appendChild(el('p', { class: 'sub', text: 'Upload a resume, an extra web page, documents or images. Each file gets its own link (like /files/resume.pdf) that you can use in any link on your site. Max 25 MB.' }));
+    view.appendChild(el('p', { class: 'sub', text: 'Upload files, or a whole folder of pages. A folder with an index.html works as a mini-site at /files/folder-name/. Use any of these in links on your site.' }));
+    if (!S.listing) { view.appendChild(el('div', { class: 'empty', text: 'Loading...' })); loadFiles(render); return; }
+    var L = S.listing;
+
+    // where am I
+    var crumbs = el('div', { class: 'crumbs' }, [el('a', { text: '📁 Files', onclick: function () { S.dir = ''; loadFiles(render); } })]);
+    var acc = '';
+    (L.folder ? L.folder.split('/') : []).forEach(function (part) {
+      acc = acc ? acc + '/' + part : part;
+      var target = acc;
+      crumbs.appendChild(document.createTextNode(' / '));
+      crumbs.appendChild(el('a', { text: part, onclick: function () { S.dir = target; loadFiles(render); } }));
+    });
+
     var opt = { name: '' }, rep = el('input', { type: 'checkbox' });
-    view.appendChild(panel('Upload a file', '', [
-      field('Save as', input(opt, 'name', { maxlength: 90, placeholder: 'Leave blank to keep the file\'s own name, e.g. resume.pdf' }), '(optional)'),
-      el('label', { class: 'check' }, [rep, 'Replace a file that already has this name']),
-      el('button', { class: 'primary', text: 'Choose file & upload...', onclick: function () {
-        if (!site.uploadFile) { toast('Update the app to upload files.', true); return; }
-        site.uploadFile({ name: opt.name, replace: rep.checked }).then(function (r) {
-          if (r.canceled) return;
-          if (!r.ok) { toast(err(r), true); return; }
-          toast('Uploaded! Link: ' + r.data.url); loadFiles(render);
-        });
+    var here = L.folder ? ' into ' + L.folder + '/' : '';
+    var buttons = [
+      el('button', { class: 'primary', text: 'Upload a file' + here, onclick: function () {
+        site.uploadFile({ name: opt.name, replace: rep.checked, folder: S.dir }).then(function (r) { uploadResult(r, 'file'); });
       } }),
-      el('p', { class: 'hint', text: 'Allowed: PDF, HTML, TXT, MD, CSV, PNG, JPG, GIF, WEBP, MP3, MP4, ZIP, DOCX, XLSX, PPTX, ODT. Uploaded web pages open in a safe sandbox, so their scripts can\'t touch your accounts.' }),
+      site.uploadFolder ? el('button', { text: '📂 Upload a whole folder...', onclick: function () {
+        toast('Pick the folder to upload...');
+        site.uploadFolder({ name: opt.name, folder: S.dir }).then(function (r) { uploadResult(r, 'folder'); });
+      } }) : null,
+      site.uploadZip ? el('button', { text: '🗜 Upload a .zip (unpacks into a folder)...', onclick: function () {
+        site.uploadZip({ name: opt.name, replace: rep.checked, folder: S.dir }).then(function (r) { uploadResult(r, 'zip'); });
+      } }) : null,
+      el('button', { text: '+ New folder', onclick: newFolder }),
+    ];
+    view.appendChild(panel('Upload', '', [
+      crumbs,
+      field('Name', input(opt, 'name', { maxlength: 90, placeholder: 'Optional: e.g. resume.pdf, or a name for the uploaded folder' }), '(leave blank to keep the original name)'),
+      el('label', { class: 'check' }, [rep, 'Replace anything that already has this name']),
+      el('div', { class: 'btnwrap' }, buttons),
+      el('p', { class: 'hint', text: 'Allowed: web pages (HTML, CSS, JS), PDF, images, fonts, audio/video, text, ZIP and Office files. Max 25 MB per file. Uploaded pages open in a safe sandbox, so their scripts can\'t touch your accounts.' }),
     ]));
-    var table = el('table', { class: 'grid' }, [el('tr', null, [el('th', { text: 'File' }), el('th', { text: 'Size' }), el('th', { text: 'Uploaded' }), el('th')])]);
-    view.appendChild(panel('Your files', 'or', [table], [el('button', { text: 'Refresh', onclick: function () { loadFiles(render); } })]));
-    if (!S.files.length) table.appendChild(el('tr', null, [el('td', { colspan: 4, class: 'empty', text: 'No files yet.' })]));
-    S.files.forEach(function (f) {
+
+    var table = el('table', { class: 'grid' }, [el('tr', null, [el('th', { text: 'Name' }), el('th', { text: 'Size' }), el('th', { text: 'Uploaded' }), el('th')])]);
+    if (L.folder) {
+      var up = L.folder.indexOf('/') >= 0 ? L.folder.slice(0, L.folder.lastIndexOf('/')) : '';
+      table.appendChild(el('tr', null, [el('td', { colspan: 4 }, [el('a', { class: 'folderlink', text: '⬑ Up a folder', onclick: function () { S.dir = up; loadFiles(render); } })])]));
+    }
+    L.folders.forEach(function (f) {
       table.appendChild(el('tr', null, [
-        el('td', null, [el('b', { text: f.name }), el('br'), el('small', { class: 'hint', text: f.url })]),
-        el('td', { text: fmtSize(f.size) }), el('td', { text: fmtTime(f.modified) }),
+        el('td', null, [el('a', { class: 'folderlink', text: '📁 ' + f.name, onclick: function () { S.dir = f.path; loadFiles(render); } }),
+          f.has_index ? el('span', { class: 'tag live', text: 'mini-site' }) : null]),
+        el('td', { text: f.count + ' file' + (f.count === 1 ? '' : 's') }), el('td', { text: '' }),
         el('td', { class: 'actions' }, [
-          el('button', { text: 'Copy link', onclick: function () { copyText(S.server + f.url); } }),
-          el('button', { text: 'View \u2197', onclick: function () { site.open(f.url); } }),
+          f.has_index ? el('button', { text: 'Copy link', onclick: function () { copyText(S.server + f.url); } }) : null,
+          f.has_index ? el('button', { text: 'View ↗', onclick: function () { site.open(f.url); } }) : null,
           el('button', { class: 'danger', text: 'Delete', onclick: function () {
-            if (!confirm('Delete ' + f.name + '? Any links to it will stop working.')) return;
-            api('DELETE', '/api/admin/files/' + encodeURIComponent(f.name)).then(function (d) { if (d.ok) { toast('Deleted.'); loadFiles(render); } else toast(err(d), true); });
+            if (!confirm('Delete the folder ' + f.name + ' and all ' + f.count + ' files in it? Links to them will stop working.')) return;
+            api('DELETE', '/api/admin/folders/' + f.path.split('/').map(encodeURIComponent).join('/')).then(function (d) { if (d.ok) { toast('Folder deleted.'); loadFiles(render); } else toast(err(d), true); });
           } }),
         ]),
       ]));
     });
+    L.files.forEach(function (f) {
+      table.appendChild(el('tr', null, [
+        el('td', null, [el('b', { text: f.name }), el('br'), el('small', { class: 'hint', text: decodeURIComponent(f.url) })]),
+        el('td', { text: fmtSize(f.size) }), el('td', { text: fmtTime(f.modified) }),
+        el('td', { class: 'actions' }, [
+          el('button', { text: 'Copy link', onclick: function () { copyText(S.server + f.url); } }),
+          el('button', { text: 'View ↗', onclick: function () { site.open(f.url); } }),
+          el('button', { class: 'danger', text: 'Delete', onclick: function () {
+            if (!confirm('Delete ' + f.name + '? Any links to it will stop working.')) return;
+            api('DELETE', '/api/admin/files/' + f.path.split('/').map(encodeURIComponent).join('/')).then(function (d) { if (d.ok) { toast('Deleted.'); loadFiles(render); } else toast(err(d), true); });
+          } }),
+        ]),
+      ]));
+    });
+    if (!L.folders.length && !L.files.length) table.appendChild(el('tr', null, [el('td', { colspan: 4, class: 'empty', text: L.folder ? 'This folder is empty.' : 'No files yet.' })]));
+    view.appendChild(panel(L.folder ? 'In ' + L.folder + '/' : 'Your files', 'or', [table], [el('button', { text: 'Refresh', onclick: function () { loadFiles(render); } })]));
+  }
+  function newFolder() {
+    var d = { name: '' };
+    modal('New folder' + (S.dir ? ' in ' + S.dir + '/' : ''), el('div', null, [
+      field('Folder name', input(d, 'name', { maxlength: 100, placeholder: 'e.g. projects' }), '(letters, numbers, spaces, dashes)'),
+    ]), [
+      { label: 'Cancel', click: closeModal },
+      { label: 'Create folder', cls: 'primary', click: function (msg) {
+        if (!d.name.trim()) { msg.textContent = 'Type a name first.'; return; }
+        api('POST', '/api/admin/folders', { path: (S.dir ? S.dir + '/' : '') + d.name.trim() }).then(function (r) {
+          if (!r.ok) { msg.textContent = err(r); return; }
+          closeModal(); S.dir = r.data.path; toast('Folder created. Upload files into it!'); loadFiles(render);
+        });
+      } },
+    ]);
   }
 
   /* ------------------------------------------------------------ poll */

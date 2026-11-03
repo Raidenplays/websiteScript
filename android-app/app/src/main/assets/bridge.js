@@ -23,7 +23,10 @@
     logout: function () { return call('logout'); },
     open: function (p) { return call('open', { path: p }); },
     uploadPic: function (caption) { return call('uploadPic', { caption: caption }); },
-    uploadFile: function (o) { return call('uploadFile', { name: (o && o.name) || '', replace: !!(o && o.replace) }); },
+    uploadFile: function (o) { return call('uploadFile', { name: (o && o.name) || '', replace: !!(o && o.replace), folder: (o && o.folder) || '' }); },
+    uploadZip: function (o) { return call('uploadZip', { name: (o && o.name) || '', replace: !!(o && o.replace), folder: (o && o.folder) || '' }); },
+    uploadFolder: function (o) { return call('uploadFolder', { name: (o && o.name) || '', folder: (o && o.folder) || '' }); },
+    onProgress: function (cb) { window.__siteProgress = cb; },
     setDirty: function (d) { window.AndroidSite.setDirty(!!d); },
   };
   document.documentElement.className += ' android';
