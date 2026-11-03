@@ -23,6 +23,7 @@
     logout: function () { return call('logout'); },
     open: function (p) { return call('open', { path: p }); },
     uploadPic: function (caption) { return call('uploadPic', { caption: caption }); },
+    uploadFile: function (o) { return call('uploadFile', { name: (o && o.name) || '', replace: !!(o && o.replace) }); },
     setDirty: function (d) { window.AndroidSite.setDirty(!!d); },
   };
   document.documentElement.className += ' android';

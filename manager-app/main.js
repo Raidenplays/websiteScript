@@ -123,6 +123,22 @@ ipcMain.handle('uploadPic', async (_e, a) => {
   return request('POST', '/api/admin/pics', fd, true);
 });
 
+const FILE_EXTS = ['pdf', 'html', 'htm', 'txt', 'md', 'csv', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp3', 'mp4', 'zip', 'docx', 'xlsx', 'pptx', 'odt'];
+ipcMain.handle('uploadFile', async (_e, a) => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Pick a file to upload', properties: ['openFile'],
+    filters: [{ name: 'Allowed files', extensions: FILE_EXTS }],
+  });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  const fp = res.filePaths[0];
+  if (fs.statSync(fp).size > 25 * 1024 * 1024) return { ok: false, data: { error: 'That file is too big (max 25 MB).' } };
+  const fd = new FormData();
+  fd.append('file', new Blob([fs.readFileSync(fp)]), path.basename(fp));
+  fd.append('name', String((a && a.name) || '').slice(0, 100));
+  fd.append('replace', a && a.replace ? '1' : '0');
+  return request('POST', '/api/admin/files', fd, true);
+});
+
 ipcMain.on('dirty', (_e, d) => { dirty = !!d; });
 
 app.whenReady().then(createWindow);

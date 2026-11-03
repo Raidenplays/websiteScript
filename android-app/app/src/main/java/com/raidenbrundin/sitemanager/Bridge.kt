@@ -3,6 +3,7 @@ package com.raidenbrundin.sitemanager
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import org.json.JSONObject
@@ -21,6 +22,7 @@ class Bridge(
     private val activity: Activity,
     private val web: WebView,
     private val launchPicker: () -> Unit,
+    private val launchFilePicker: () -> Unit,
 ) {
     private val exec = Executors.newFixedThreadPool(3)
     private val store = TokenStore(activity)
@@ -30,6 +32,7 @@ class Bridge(
     @Volatile var dirty = false
         private set
     private var pendingUpload: Pair<Int, String>? = null
+    private var pendingFile: Triple<Int, String, Boolean>? = null
 
     @JavascriptInterface
     fun setDirty(value: Boolean) {
@@ -39,6 +42,14 @@ class Bridge(
     @JavascriptInterface
     fun call(id: Int, name: String, argsJson: String) {
         val args = try { JSONObject(argsJson) } catch (e: Exception) { JSONObject() }
+        if (name == "uploadFile") {
+            activity.runOnUiThread {
+                pendingFile?.let { resolve(it.first, JSONObject().put("canceled", true)) }
+                pendingFile = Triple(id, args.optString("name").take(100), args.optBoolean("replace"))
+                launchFilePicker()
+            }
+            return
+        }
         if (name == "uploadPic") {
             activity.runOnUiThread {
                 pendingUpload?.let { resolve(it.first, JSONObject().put("canceled", true)) }
@@ -73,6 +84,18 @@ class Bridge(
         }
         exec.execute {
             resolve(id, try { uploadPic(uri, caption) } catch (e: Exception) { fail(0, "Couldn't upload that picture: ${e.message}") })
+        }
+    }
+
+    fun onFilePicked(uri: Uri?) {
+        val (id, saveAs, replace) = pendingFile ?: return
+        pendingFile = null
+        if (uri == null) {
+            resolve(id, JSONObject().put("canceled", true))
+            return
+        }
+        exec.execute {
+            resolve(id, try { uploadFile(uri, saveAs, replace) } catch (e: Exception) { fail(0, "Couldn't upload that file: ${e.message}") })
         }
     }
 
@@ -160,6 +183,43 @@ class Bridge(
         return send("POST", "/api/admin/pics", body, "multipart/form-data; boundary=$boundary")
     }
 
+    private fun displayName(uri: Uri): String =
+        activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        } ?: "file"
+
+    /** Reads the whole file, or returns null if it's bigger than [max]. */
+    private fun readLimited(uri: Uri, max: Int): ByteArray? {
+        val input = activity.contentResolver.openInputStream(uri) ?: throw IOException("Couldn't open the file")
+        return input.use {
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(64 * 1024)
+            var tooBig = false
+            while (true) {
+                val n = it.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                if (out.size() > max) { tooBig = true; break }
+            }
+            if (tooBig) null else out.toByteArray()
+        }
+    }
+
+    private fun uploadFile(uri: Uri, saveAs: String, replace: Boolean): JSONObject {
+        val bytes = readLimited(uri, MAX_FILE) ?: return fail(0, "That file is too big (max 25 MB).")
+        val fileName = displayName(uri).replace(Regex("[\\r\\n\"/\\\\]"), "_").take(150)
+        val boundary = "----RaidenSite" + UUID.randomUUID().toString().replace("-", "")
+        val cleanName = saveAs.replace(Regex("[\\r\\n\"]"), " ")
+        val body = ByteArrayOutputStream().apply {
+            write(("--$boundary\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\n$cleanName\r\n").toByteArray())
+            write(("--$boundary\r\nContent-Disposition: form-data; name=\"replace\"\r\n\r\n${if (replace) "1" else "0"}\r\n").toByteArray())
+            write(("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$fileName\"\r\nContent-Type: application/octet-stream\r\n\r\n").toByteArray())
+            write(bytes)
+            write(("\r\n--$boundary--\r\n").toByteArray())
+        }.toByteArray()
+        return send("POST", "/api/admin/files", body, "multipart/form-data; boundary=$boundary")
+    }
+
     // ------------------------------------------------------------------ http
 
     private fun request(method: String, path: String, body: Any?): JSONObject {
@@ -214,5 +274,6 @@ class Bridge(
 
     companion object {
         private const val MAX_UPLOAD = 10 * 1024 * 1024
+        private const val MAX_FILE = 25 * 1024 * 1024
     }
 }

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var site = window.site;
-  var S = { server: '', name: '', content: null, saved: null, version: 0, dirty: false, view: 'pages', tab: 0 };
+  var S = { files: [], server: '', name: '', content: null, saved: null, version: 0, dirty: false, view: 'pages', tab: 0 };
 
   /* ------------------------------------------------------------ helpers */
   function $(s, r) { return (r || document).querySelector(s); }
@@ -125,6 +125,7 @@
       S.version = r.data.version; S.content = r.data.content; S.saved = clone(r.data.content); S.tab = 0;
       markDirty(); go('pages');
     });
+    loadFiles();
   }
 
   /* ------------------------------------------------------------ navigation */
@@ -138,7 +139,7 @@
   }
   function render() {
     var view = $('#view'); view.textContent = '';
-    ({ pages: viewPages, settings: viewSettings, blog: viewBlog, pics: viewPics, poll: viewPoll, shouts: viewShouts, users: viewUsers, history: viewHistory })[S.view](view);
+    ({ pages: viewPages, settings: viewSettings, blog: viewBlog, pics: viewPics, files: viewFiles, poll: viewPoll, shouts: viewShouts, users: viewUsers, history: viewHistory })[S.view](view);
   }
   function panel(title, cls, body, headExtra) {
     return el('div', { class: 'panel' }, [el('div', { class: 'ph ' + (cls || '') }, [el('span', { text: title }), el('span', { class: 'spacer' })].concat(headExtra || [])), el('div', { class: 'pb' }, body)]);
@@ -167,6 +168,7 @@
     var dl = el('datalist', { id: listId });
     LINK_OPTIONS.forEach(function (o) { dl.appendChild(el('option', { value: o[0], text: o[1] })); });
     S.content.tabs.forEach(function (t, i) { dl.appendChild(el('option', { value: i === 0 ? '/' : '/' + t.slug, text: 'Page: ' + t.title })); });
+    S.files.forEach(function (f) { dl.appendChild(el('option', { value: f.url, text: 'File: ' + f.name })); });
     var i = input(obj, key, { list: listId, placeholder: 'https://...  or  /blog  or  @email' }, onchange);
     var wrap = el('span', null, [i, dl]);
     return wrap;
@@ -183,6 +185,8 @@
     tabs.forEach(function (t, i) {
       list.appendChild(el('div', { class: 'item' + (i === S.tab ? ' sel' : ''), onclick: function () { S.tab = i; render(); } }, [
         el('span', { class: 'name' }, [t.title, i === 0 ? el('span', { class: 'tag home', text: 'home' }) : null, t.hidden ? el('span', { class: 'tag', text: 'hidden' }) : null]),
+        i === 0 ? null : el('button', { class: 'icon' + (t.hidden ? ' shown-off' : ''), title: t.hidden ? 'Show this tab in the menu' : 'Hide this tab from the menu (keeps everything)',
+          text: t.hidden ? 'Show' : 'Hide', onclick: function (e) { e.stopPropagation(); t.hidden = !t.hidden; markDirty(); render(); toast(t.hidden ? '"' + t.title + '" is hidden. Save & publish to apply.' : '"' + t.title + '" will show in the menu. Save & publish to apply.'); } }),
         el('button', { class: 'icon', title: 'Move left', text: '▲', disabled: i <= 1, onclick: function (e) { e.stopPropagation(); move(tabs, i, -1); S.tab = i - 1; markDirty(); render(); } }),
         el('button', { class: 'icon', title: 'Move right', text: '▼', disabled: i === 0 || i === tabs.length - 1, onclick: function (e) { e.stopPropagation(); move(tabs, i, 1); S.tab = i + 1; markDirty(); render(); } }),
       ]));
@@ -456,6 +460,53 @@
             api('DELETE', '/api/admin/pics/' + p.id).then(function (d) { if (d.ok) render(); else toast(err(d), true); });
           } })]));
       });
+    });
+  }
+
+  /* ------------------------------------------------------------ files */
+  function loadFiles(then) {
+    return api('GET', '/api/admin/files').then(function (r) { if (r.ok) S.files = r.data.files; if (then) then(); });
+  }
+  function fmtSize(b) { return b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
+  function copyText(text) {
+    var done = function () { toast('Link copied: ' + text); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+    else fallback();
+    function fallback() { var t = el('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) { toast(text); } t.remove(); }
+  }
+  function viewFiles(view) {
+    view.appendChild(el('h2', { text: 'Files' }));
+    view.appendChild(el('p', { class: 'sub', text: 'Upload a resume, an extra web page, documents or images. Each file gets its own link (like /files/resume.pdf) that you can use in any link on your site. Max 25 MB.' }));
+    var opt = { name: '' }, rep = el('input', { type: 'checkbox' });
+    view.appendChild(panel('Upload a file', '', [
+      field('Save as', input(opt, 'name', { maxlength: 90, placeholder: 'Leave blank to keep the file\'s own name, e.g. resume.pdf' }), '(optional)'),
+      el('label', { class: 'check' }, [rep, 'Replace a file that already has this name']),
+      el('button', { class: 'primary', text: 'Choose file & upload...', onclick: function () {
+        if (!site.uploadFile) { toast('Update the app to upload files.', true); return; }
+        site.uploadFile({ name: opt.name, replace: rep.checked }).then(function (r) {
+          if (r.canceled) return;
+          if (!r.ok) { toast(err(r), true); return; }
+          toast('Uploaded! Link: ' + r.data.url); loadFiles(render);
+        });
+      } }),
+      el('p', { class: 'hint', text: 'Allowed: PDF, HTML, TXT, MD, CSV, PNG, JPG, GIF, WEBP, MP3, MP4, ZIP, DOCX, XLSX, PPTX, ODT. Uploaded web pages open in a safe sandbox, so their scripts can\'t touch your accounts.' }),
+    ]));
+    var table = el('table', { class: 'grid' }, [el('tr', null, [el('th', { text: 'File' }), el('th', { text: 'Size' }), el('th', { text: 'Uploaded' }), el('th')])]);
+    view.appendChild(panel('Your files', 'or', [table], [el('button', { text: 'Refresh', onclick: function () { loadFiles(render); } })]));
+    if (!S.files.length) table.appendChild(el('tr', null, [el('td', { colspan: 4, class: 'empty', text: 'No files yet.' })]));
+    S.files.forEach(function (f) {
+      table.appendChild(el('tr', null, [
+        el('td', null, [el('b', { text: f.name }), el('br'), el('small', { class: 'hint', text: f.url })]),
+        el('td', { text: fmtSize(f.size) }), el('td', { text: fmtTime(f.modified) }),
+        el('td', { class: 'actions' }, [
+          el('button', { text: 'Copy link', onclick: function () { copyText(S.server + f.url); } }),
+          el('button', { text: 'View \u2197', onclick: function () { site.open(f.url); } }),
+          el('button', { class: 'danger', text: 'Delete', onclick: function () {
+            if (!confirm('Delete ' + f.name + '? Any links to it will stop working.')) return;
+            api('DELETE', '/api/admin/files/' + encodeURIComponent(f.name)).then(function (d) { if (d.ok) { toast('Deleted.'); loadFiles(render); } else toast(err(d), true); });
+          } }),
+        ]),
+      ]));
     });
   }
 

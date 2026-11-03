@@ -27,6 +27,10 @@ class MainActivity : ComponentActivity() {
         bridge.onImagePicked(uri)
     }
 
+    private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        bridge.onFilePicked(uri)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -48,9 +52,11 @@ class MainActivity : ComponentActivity() {
             setSupportZoom(false)
         }
 
-        bridge = Bridge(this, web) {
-            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        }
+        bridge = Bridge(
+            this, web,
+            launchPicker = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            launchFilePicker = { pickFile.launch(arrayOf("*/*")) },
+        )
         web.addJavascriptInterface(bridge, "AndroidSite")
 
         web.webViewClient = object : WebViewClient() {

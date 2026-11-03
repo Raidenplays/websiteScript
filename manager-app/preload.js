@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('site', {
   logout: () => ipcRenderer.invoke('logout'),
   open: (p) => ipcRenderer.invoke('open', p),
   uploadPic: (caption) => ipcRenderer.invoke('uploadPic', { caption }),
+  uploadFile: (o) => ipcRenderer.invoke('uploadFile', o),
   setDirty: (d) => ipcRenderer.send('dirty', !!d),
 });

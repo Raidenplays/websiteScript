@@ -38,6 +38,7 @@ BASE = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get("DATA_DIR", BASE / "data"))
 STATIC = Path(os.environ.get("STATIC_DIR", BASE / "static"))
 PICS = DATA / "pics"
+FILES = DATA / "files"
 DB_PATH = DATA / "site.db"
 
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
@@ -46,7 +47,8 @@ COOKIE = "__Host-sid" if COOKIE_SECURE else "sid"
 SESSION_SECONDS = 30 * 86400
 ALLOWED_ORIGINS = {o.strip().rstrip("/") for o in os.environ.get("SITE_ORIGIN", "").split(",") if o.strip()}
 CHANNEL_ID = os.environ.get("YT_CHANNEL_ID", "UCJMqGXShRihZ6F5QyrZrIcg")
-MAX_UPLOAD = 10 * 1024 * 1024
+MAX_UPLOAD = 10 * 1024 * 1024        # pictures
+MAX_FILE = 25 * 1024 * 1024          # other uploaded files
 Image.MAX_IMAGE_PIXELS = 40_000_000
 
 
@@ -160,6 +162,7 @@ def conn():
 def init_db():
     DATA.mkdir(parents=True, exist_ok=True)
     PICS.mkdir(parents=True, exist_ok=True)
+    FILES.mkdir(parents=True, exist_ok=True)
     with conn() as c:
         c.execute("PRAGMA journal_mode=WAL")
         c.executescript(SCHEMA)
@@ -367,8 +370,8 @@ async def security(req: Request, call_next):
         if not bearer and req.url.path != "/api/app/login" and not origin_ok(req):
             return JSONResponse({"error": "Request blocked (bad origin)."}, 403)
         try:
-            if int(req.headers.get("content-length") or 0) > MAX_UPLOAD + 100_000:
-                return JSONResponse({"error": "That file is too big (max 10 MB)."}, 413)
+            if int(req.headers.get("content-length") or 0) > MAX_FILE + 100_000:
+                return JSONResponse({"error": "That file is too big (max 25 MB)."}, 413)
         except ValueError:
             return JSONResponse({"error": "Bad request."}, 400)
     resp = await call_next(req)
@@ -383,6 +386,11 @@ async def security(req: Request, call_next):
         h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if req.url.path.startswith("/api/"):
         h["Cache-Control"] = "no-store"
+    if req.url.path.startswith("/files/"):
+        # Uploaded files run in a sandbox: scripts in an uploaded page get a throwaway origin and
+        # can't read the site's cookies or use the admin API.
+        h["Content-Security-Policy"] = ("sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms; "
+                                        "default-src * data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none'")
     return resp
 
 
@@ -676,6 +684,81 @@ def get_pic(name: str):
         fail(404, "Not found")
     return FileResponse(PICS / name, media_type="image/webp",
                         headers={"Cache-Control": "public, max-age=604800, immutable"})
+
+
+# ---- uploaded files (/files/NAME)
+FILE_TYPES = {
+    "pdf": "application/pdf", "html": "text/html; charset=utf-8", "htm": "text/html; charset=utf-8",
+    "txt": "text/plain; charset=utf-8", "md": "text/plain; charset=utf-8", "csv": "text/csv; charset=utf-8",
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+    "mp3": "audio/mpeg", "mp4": "video/mp4", "zip": "application/zip",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "odt": "application/vnd.oasis.opendocument.text",
+}
+FILE_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,79}\.([a-z0-9]{2,4})")
+
+
+def clean_file_name(raw):
+    """'My Resume (2026).PDF' -> 'my-resume-2026.pdf'"""
+    raw = unicodedata.normalize("NFKD", raw or "").encode("ascii", "ignore").decode().lower().strip()
+    raw = raw.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    stem, dot, ext = raw.rpartition(".")
+    if not dot:
+        fail(400, "The file needs an extension like .pdf or .html.")
+    stem = re.sub(r"[^a-z0-9_-]+", "-", stem).strip("-_")[:80] or "file"
+    name = stem + "." + ext
+    m = FILE_RE.fullmatch(name)
+    if not m or m.group(1) not in FILE_TYPES:
+        fail(400, "That kind of file isn't allowed. Allowed: " + ", ".join(sorted(FILE_TYPES)))
+    return name
+
+
+@app.get("/files/{name}")
+def get_file(name: str):
+    m = FILE_RE.fullmatch(name)
+    if not m or m.group(1) not in FILE_TYPES or not (FILES / name).is_file():
+        fail(404, "Not found")
+    return FileResponse(FILES / name, media_type=FILE_TYPES[m.group(1)], headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/admin/files")
+def list_files(req: Request):
+    need_admin(req)
+    out = []
+    for f in sorted(FILES.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True):
+        if f.is_file() and FILE_RE.fullmatch(f.name):
+            st = f.stat()
+            out.append({"name": f.name, "url": "/files/" + f.name, "size": st.st_size, "modified": int(st.st_mtime)})
+    return {"files": out}
+
+
+@app.post("/api/admin/files")
+async def upload_file(req: Request, file: UploadFile = File(...), name: str = Form(""), replace: str = Form("0")):
+    need_admin(req)
+    final = clean_file_name(name.strip() or file.filename or "")
+    data = await file.read(MAX_FILE + 1)
+    if len(data) > MAX_FILE:
+        fail(413, "That file is too big (max 25 MB).")
+    if not data:
+        fail(400, "That file is empty.")
+    target = FILES / final
+    if target.exists() and replace != "1":
+        fail(409, f"There's already a file called {final}. Tick 'Replace' to overwrite it.")
+    tmp = FILES / (".upload-" + secrets.token_hex(8))
+    tmp.write_bytes(data)
+    tmp.replace(target)
+    return {"ok": True, "name": final, "url": "/files/" + final}
+
+
+@app.delete("/api/admin/files/{name}")
+def delete_file(name: str, req: Request):
+    need_admin(req)
+    if not FILE_RE.fullmatch(name):
+        fail(404, "Not found")
+    (FILES / name).unlink(missing_ok=True)
+    return {"ok": True}
 
 
 # ---- admin

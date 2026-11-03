@@ -32,7 +32,7 @@ SECTION_TYPES = {"text", "items", "links", "player", "videos", "pics", "marquee"
 SINGLE_USE = {"player", "videos", "pics", "poll", "shoutbox", "counter", "blog"}
 LINK_STYLES = {"list", "buttons", "boxes", "badges"}
 LINK_KEYS = {"email", "linkedin", "github", "discord", "slinkgrenade", "youtube", "coffee"}
-RESERVED_SLUGS = {"api", "signup", "account", "admin", "blog-post", "style.css", "site.js",
+RESERVED_SLUGS = {"api", "files", "signup", "account", "admin", "blog-post", "style.css", "site.js",
                   "robots.txt", "404", "static", "login", "logout"}
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,29}")
 

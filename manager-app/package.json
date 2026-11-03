@@ -1,7 +1,7 @@
 {
   "name": "raiden-site-manager",
   "productName": "Raiden Site Manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Desktop admin app for raidenbrundin.com",
   "main": "main.js",
   "author": "Raiden Brundin",
