@@ -19,7 +19,7 @@ case "${1:-help}" in
     docker compose logs -f --tail=100
     ;;
   restart)
-    docker compose up -d
+    docker compose up -d --force-recreate
     say "Restarted (settings from .env reloaded)."
     ;;
   update)
