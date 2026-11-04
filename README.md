@@ -97,6 +97,7 @@ Windows SmartScreen may warn the first time because the app isn't code-signed. C
 
 ## Day to day
 
+- **Mini-sites:** upload a folder or .zip with an `index.html` in **Files** (for example a folder called `axeolon`). It opens at `/files/axeolon/` and also at the short address `raidenbrundin.com/axeolon`. If a tab has the same name, the tab wins.
 - **Upload pics / start a new poll / ban someone:** use the Site Manager app (or the **Admin** page on the site).
 - **Delete a shout:** click the red × next to it in the shoutbox (admins see it on every shout).
 - **Someone forgot their password:** there's no email on accounts, so reset it for them:

@@ -388,7 +388,9 @@ async def security(req: Request, call_next):
         h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if req.url.path.startswith("/api/"):
         h["Cache-Control"] = "no-store"
-    if req.url.path.startswith("/files/"):
+    if req.url.path.startswith("/files/") or "x-mini-site" in h:
+        if "x-mini-site" in h:
+            del h["x-mini-site"]
         # Uploaded files run in a sandbox: scripts in an uploaded page get a throwaway origin and
         # can't read the site's cookies or use the admin API.
         h["Content-Security-Policy"] = ("sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms; "
@@ -1346,5 +1348,43 @@ def tab_page(slug: str):
         return RedirectResponse("/" if base == "index" else "/" + base, status_code=301)
     _, data = get_content()
     if slug == "home" or not any(t["slug"] == slug for t in data["tabs"]):
+        if mini_site_dir(slug):  # an uploaded folder with an index.html, e.g. /axeolon
+            return RedirectResponse("/" + urllib.parse.quote(slug) + "/", status_code=308)
         fail(404, "Not found")
     return html_page(C.render_page(data, render_cfg(), page_ctx(), slug))
+
+
+# ---- mini-sites at short addresses: Files/axeolon/ (with an index.html) also opens at /axeolon/
+# Tabs always win if one has the same name. These pages get the same sandbox as /files/.
+def mini_site_dir(name):
+    rel = safe_rel(name, want_file=False)
+    if rel is None or "/" in rel:
+        return None
+    d = under_files(rel)
+    if d.is_dir() and any((d / i).is_file() for i in ("index.html", "index.htm")):
+        return d
+    return None
+
+
+@app.get("/{site}/{path:path}")
+def mini_site(site: str, path: str):
+    d = mini_site_dir(site)
+    if d is None:
+        fail(404, "Not found")
+    sandbox = {"X-Mini-Site": "1", "Cache-Control": "no-cache"}
+    rel = safe_rel(path, want_file=False) if path else ""
+    if rel is None:
+        fail(404, "Not found")
+    target = (d / rel).resolve() if rel else d
+    if d.resolve() != target and d.resolve() not in target.parents:
+        fail(404, "Not found")
+    if target.is_dir():
+        if path and not path.endswith("/"):
+            return RedirectResponse("/" + urllib.parse.quote(site + "/" + rel) + "/", status_code=308)
+        for index in ("index.html", "index.htm"):
+            if (target / index).is_file():
+                return FileResponse(target / index, media_type=FILE_TYPES["html"], headers=sandbox)
+        fail(404, "Not found")
+    if not target.is_file() or _ext(target.name) not in FILE_TYPES:
+        fail(404, "Not found")
+    return FileResponse(target, media_type=FILE_TYPES[_ext(target.name)], headers=sandbox)
